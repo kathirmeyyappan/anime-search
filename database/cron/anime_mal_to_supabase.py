@@ -132,7 +132,8 @@ def run_sync(mal_client_id: str, mal_username: str, supabase_db_url: str) -> int
     return len(rows)
 
 
-if __name__ == "__main__":
+# for running local sync to datsbase
+if __name__ == "__main__":    
     from dotenv import load_dotenv
 
     load_dotenv(Path(__file__).parent.parent / ".env")
