@@ -25,3 +25,6 @@
   used in the old Notion sync — "Anime List (Statistics Version)"), same
   pattern as anime_mal: schema/<table>.sql + cron/<table>_to_supabase.py.
   Not started yet.
+
+- When building the franchise DB, need to do some processing to get the first entry MAL link so that there is basically a foreign key sitting there for reference.
+- On that note, related entry search (and vector search) should be top of mind here.
