@@ -24,7 +24,22 @@
 - Build a table + sync pipeline for my spreadsheet data (the Google Sheet
   used in the old Notion sync — "Anime List (Statistics Version)"), same
   pattern as anime_mal: schema/<table>.sql + cron/<table>_to_supabase.py.
-  Not started yet.
+  Done — anime_sheet.
+
+- Add a combined view FULL OUTER JOINing anime_mal and anime_sheet on
+  mal_id, documented via COMMENT ON, so an agent gluing these tables
+  together for a query has one correct pre-joined surface instead of
+  re-deriving the join. Done — anime_combined (schema/anime_combined.sql),
+  MATERIALIZED, refreshed inside daily_sync's shared transaction in
+  cron/modal_cron.py after both source tables write.
+
+- Add proper indexes to anime_combined, informed by the indexes already on
+  the two source tables (schema/anime_mal_indexes.sql: my_status,
+  start_date, mean, my_start_date; schema/anime_sheet_indexes.sql: mal_id)
+  plus whatever else an agent querying the combined view specifically would
+  want (e.g. sorting/filtering on my_mal_score / my_sheet_score, caught_up,
+  first_watched_year/release_year — think through the combined-view access
+  patterns specifically, not just copy the source-table list over).
 
 - When building the franchise DB, need to do some processing to get the first entry MAL link so that there is basically a foreign key sitting there for reference.
 - On that note, related entry search (and vector search) should be top of mind here.
