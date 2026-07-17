@@ -1,18 +1,8 @@
--- Anime list table: a full mirror of Uji_Gintoki_Bowl's MyAnimeList list.
+-- Full mirror of my MyAnimeList list. Repopulated via TRUNCATE + INSERT on
+-- every sync (cron/anime_mal_to_supabase.py); MAL is the source of truth.
 --
--- This table is fully repopulated on every sync run (TRUNCATE + re-INSERT in
--- a single transaction, so a mid-run crash rolls back and leaves the previous
--- data intact instead of leaving the table half-empty). There is no upsert /
--- diffing logic — MAL is the source of truth, this table just mirrors it.
---
--- Source: GET https://api.myanimelist.net/v2/users/{username}/animelist
--- Each raw MAL API entry looks like:
---   {
---     "node": { ...anime metadata... },
---     "list_status": { ...my personal status on that anime... }
---   }
--- The comment above each column below says which of those two objects (and
--- which key within it) the column is sourced from.
+-- Source: GET /v2/users/{username}/animelist -> { node: {...}, list_status: {...} }.
+-- Each column comment below tags which of those two it comes from.
 
 DROP TABLE IF EXISTS anime_mal;
 
@@ -107,11 +97,11 @@ CREATE TABLE anime_mal (
 
     -- list_status.start_date
     -- Renamed to "my_start_date": when I personally started watching.
-    -- Native DATE is fine here (unlike node dates above) since MAL always
-    -- gives these as full dates or leaves them empty/null.
+    -- Turns out these can be partial too (e.g. "2024-10"), same as the node
+    -- dates above, so the sync script normalizes these the same way.
     my_start_date           DATE,
 
-    -- list_status.finish_date -> "my_finish_date"
+    -- list_status.finish_date -> "my_finish_date" (same partial-date normalization)
     my_finish_date          DATE,
 
     -- list_status.num_times_rewatched
@@ -122,12 +112,11 @@ CREATE TABLE anime_mal (
     synced_at               TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- The -- comments above only live in this file — Postgres discards them once
--- this script runs. COMMENT ON persists the same documentation into the
--- database's own catalog (pg_description), so it's still there later via
--- `\d+ anime_mal` in psql, `col_description(...)` in a query, or Supabase
--- Studio's table editor — including for an agent introspecting the schema
--- with no access to this repo.
+-- Indexes: see anime_mal_indexes.sql (run after this, on fresh setup).
+
+-- COMMENT ON persists these into pg_description (queryable via \d+,
+-- col_description(), Supabase Studio) since the -- comments above don't
+-- survive past this script running.
 COMMENT ON TABLE anime_mal IS
     'Full mirror of my MyAnimeList list. Repopulated via TRUNCATE + INSERT in one transaction on every sync run (see database/sync_to_supabase.py); MAL is the source of truth, no upsert/diff logic.';
 
@@ -170,9 +159,9 @@ COMMENT ON COLUMN anime_mal.is_rewatching IS
 COMMENT ON COLUMN anime_mal.my_updated_at IS
     'list_status.updated_at, renamed — when I last touched this list entry (not when MAL''s own metadata for the anime changed).';
 COMMENT ON COLUMN anime_mal.my_start_date IS
-    'list_status.start_date, renamed — when I personally started watching.';
+    'list_status.start_date, renamed — when I personally started watching. Can be a partial date from MAL (e.g. year-month), normalized the same way as node dates.';
 COMMENT ON COLUMN anime_mal.my_finish_date IS
-    'list_status.finish_date, renamed — when I personally finished watching.';
+    'list_status.finish_date, renamed — when I personally finished watching. Same partial-date normalization as my_start_date.';
 COMMENT ON COLUMN anime_mal.num_times_rewatched IS
     'list_status.num_times_rewatched.';
 COMMENT ON COLUMN anime_mal.synced_at IS
