@@ -4,7 +4,9 @@
 -- Source: GET /v2/users/{username}/animelist -> { node: {...}, list_status: {...} }.
 -- Each column comment below tags which of those two it comes from.
 
-DROP TABLE IF EXISTS anime_mal;
+-- CASCADE also drops anime_combined (it depends on this table) — re-run
+-- anime_combined.sql after this.
+DROP TABLE IF EXISTS anime_mal CASCADE;
 
 CREATE TABLE anime_mal (
     -- node.id
@@ -21,6 +23,9 @@ CREATE TABLE anime_mal (
     -- node.alternative_titles
     -- Kept as-is (raw JSON): { "synonyms": [...], "en": "...", "ja": "..." }
     alternative_titles      JSONB,
+
+    -- node.main_picture.large (falls back to .medium if large is absent)
+    image_url               TEXT,
 
     -- node.start_date
     -- MAL dates are sometimes partial (e.g. just "2025" or "2025-12" for
@@ -126,6 +131,8 @@ COMMENT ON COLUMN anime_mal.title IS
     'node.title — canonical MAL title (usually the Japanese romaji title).';
 COMMENT ON COLUMN anime_mal.alternative_titles IS
     'node.alternative_titles — raw JSON {synonyms, en, ja}.';
+COMMENT ON COLUMN anime_mal.image_url IS
+    'node.main_picture.large, falls back to .medium if absent.';
 COMMENT ON COLUMN anime_mal.start_date IS
     'node.start_date — normalized to a full DATE; MAL''s partial dates (year-only or year-month) are rounded down to the 1st of the known period.';
 COMMENT ON COLUMN anime_mal.end_date IS

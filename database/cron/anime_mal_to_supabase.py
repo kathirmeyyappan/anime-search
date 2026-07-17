@@ -1,8 +1,10 @@
 """Fetch the full MAL list and fully repopulate the `anime_mal` table in Supabase.
 
-`run_sync()` is the reusable piece: it takes credentials as arguments (rather
-than reading env vars itself) so the Modal cron job can call it directly with
-values pulled from a modal.Secret, without needing a .env file.
+fetch_rows() (network, no DB) and write_rows() (DB write given an existing
+cursor, no connection/commit of its own) are split apart so the Modal cron
+pipeline can share one transaction across anime_mal + anime_sheet + the
+anime_combined refresh (see cron/modal_cron.py). run_sync() glues both
+together with its own connection, for standalone/local use.
 
 Running this file directly (`python3 anime_mal_to_supabase.py`) does a local
 dry run using database/.env.
@@ -26,6 +28,7 @@ INSERT_COLUMNS = [
     "mal_id",
     "title",
     "alternative_titles",
+    "image_url",
     "start_date",
     "end_date",
     "synopsis",
@@ -76,11 +79,14 @@ def _transform_entry(entry: dict[str, Any]) -> dict[str, Any]:
     list_status = entry.get("list_status", {})
 
     genres = [g["name"] for g in node.get("genres", []) if "name" in g]
+    main_picture = node.get("main_picture") or {}
+    image_url = main_picture.get("large") or main_picture.get("medium")
 
     return {
         "mal_id": node["id"],
         "title": node.get("title"),
         "alternative_titles": Json(node["alternative_titles"]) if node.get("alternative_titles") is not None else None,
+        "image_url": image_url,
         "start_date": _normalize_partial_date(node.get("start_date")),
         "end_date": _normalize_partial_date(node.get("end_date")),
         "synopsis": node.get("synopsis"),
@@ -103,29 +109,40 @@ def _transform_entry(entry: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def run_sync(mal_client_id: str, mal_username: str, supabase_db_url: str) -> int:
-    """Fetch `mal_username`'s full MAL list and fully repopulate the Supabase `anime_mal` table.
+def fetch_rows(mal_client_id: str, mal_username: str) -> list[dict[str, Any]]:
+    """Fetch + transform only — no DB connection touched."""
+    entries = fetch_full_animelist(mal_client_id, mal_username)
+    return [_transform_entry(e) for e in entries]
 
-    TRUNCATE + bulk INSERT happen inside one transaction (`with conn:`), so a
-    crash mid-run rolls back and leaves the previous table contents intact
-    rather than leaving it half-populated.
+
+def write_rows(cur, rows: list[dict[str, Any]]) -> None:
+    """TRUNCATE + bulk INSERT using the given cursor. Caller owns the
+    connection/transaction/commit — this never commits on its own, so it can
+    be composed into a larger shared transaction.
+    """
+    values = [tuple(row[col] for col in INSERT_COLUMNS) for row in rows]
+    cur.execute("TRUNCATE anime_mal")
+    execute_values(
+        cur,
+        f"INSERT INTO anime_mal ({', '.join(INSERT_COLUMNS)}) VALUES %s",
+        values,
+    )
+
+
+def run_sync(mal_client_id: str, mal_username: str, supabase_db_url: str) -> int:
+    """Standalone convenience wrapper: fetch + write + commit with its own
+    connection. TRUNCATE + INSERT happen inside one transaction (`with conn:`),
+    so a crash mid-run rolls back rather than leaving the table half-populated.
 
     Returns the number of rows written.
     """
-    entries = fetch_full_animelist(mal_client_id, mal_username)
-    rows = [_transform_entry(e) for e in entries]
-    values = [tuple(row[col] for col in INSERT_COLUMNS) for row in rows]
+    rows = fetch_rows(mal_client_id, mal_username)
 
     conn = psycopg2.connect(supabase_db_url)
     try:
         with conn:
             with conn.cursor() as cur:
-                cur.execute("TRUNCATE anime_mal")
-                execute_values(
-                    cur,
-                    f"INSERT INTO anime_mal ({', '.join(INSERT_COLUMNS)}) VALUES %s",
-                    values,
-                )
+                write_rows(cur, rows)
     finally:
         conn.close()
 

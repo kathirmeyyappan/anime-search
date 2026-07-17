@@ -62,12 +62,25 @@ LIST_STATUS_FIELDS = [
 PAGE_LIMIT = 500
 REQUEST_TIMEOUT_S = 30
 RATE_LIMIT_SLEEP_S = 0.3
+MAX_ATTEMPTS = 3
+RETRY_BASE_SLEEP_S = 2
 
 
 def _build_fields_param() -> str:
     node_fields = ",".join(ANIME_FIELDS)
     list_status_fields = ",".join(LIST_STATUS_FIELDS)
     return f"{node_fields},list_status{{{list_status_fields}}}"
+
+
+def _get_with_retry(url: str, headers: dict, params: dict | None) -> requests.Response | None:
+    """GET with bounded retries on timeout/connection errors (transient, not our bug)."""
+    for attempt in range(MAX_ATTEMPTS):
+        try:
+            return requests.get(url, headers=headers, params=params, timeout=REQUEST_TIMEOUT_S)
+        except (requests.Timeout, requests.ConnectionError):
+            if attempt == MAX_ATTEMPTS - 1:
+                raise
+            time.sleep(RETRY_BASE_SLEEP_S * 2**attempt)
 
 
 def fetch_full_animelist(client_id: str, username: str) -> list[dict[str, Any]]:
@@ -90,7 +103,7 @@ def fetch_full_animelist(client_id: str, username: str) -> list[dict[str, Any]]:
     next_params = params
 
     while next_url:
-        res = requests.get(next_url, headers=headers, params=next_params, timeout=REQUEST_TIMEOUT_S)
+        res = _get_with_retry(next_url, headers, next_params)
         if not res.ok:
             raise RuntimeError(f"MAL request failed ({res.status_code}): {res.text[:500]}")
 
