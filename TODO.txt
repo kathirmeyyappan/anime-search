@@ -1,0 +1,27 @@
+## Agent / query conventions for anime_mal
+
+- my_status = 'plan_to_watch' entries should usually be EXCLUDED by default
+  when answering general questions about "my anime" (recommendations, stats,
+  browsing, etc.) — plan_to_watch means I haven't watched it, so it's not
+  representative of taste/history. Only include plan_to_watch entries when
+  the question is specifically about the plan-to-watch list itself.
+
+- Know which columns are indexed (see schema/anime_mal_indexes.sql) and bias
+  query shape toward filtering/sorting on those when a question could
+  reasonably be answered either way. Currently: my_status, start_date, mean,
+  my_start_date.
+
+## Open items
+
+- Write a fuller preamble/README for an agent querying this database in
+  general — common practices and idiosyncrasies to know before writing
+  queries, not just the plan_to_watch note above. In particular: how
+  querying MAL-derived tables (anime_mal — auto-synced daily, MAL is source
+  of truth, don't expect manual edits to survive) differs from querying the
+  spreadsheet-derived table(s) below (manually curated, no auto-sync,
+  different notion of "up to date").
+
+- Build a table + sync pipeline for my spreadsheet data (the Google Sheet
+  used in the old Notion sync — "Anime List (Statistics Version)"), same
+  pattern as anime_mal: schema/<table>.sql + cron/<table>_to_supabase.py.
+  Not started yet.
