@@ -1,7 +1,10 @@
 """Fetch the full anime spreadsheet and fully repopulate `anime_sheet` in Supabase.
 
-`run_sync()` takes credentials as arguments (not env vars itself) so the Modal
-cron job can call it directly from a modal.Secret, without needing a .env file.
+fetch_rows() (network, no DB) and write_rows() (DB write given an existing
+cursor, no connection/commit of its own) are split apart so the Modal cron
+pipeline can share one transaction across anime_mal + anime_sheet + the
+anime_combined refresh (see cron/modal_cron.py). run_sync() glues both
+together with its own connection, for standalone/local use.
 
 Running this file directly (`python3 anime_sheet_to_supabase.py`) does a local
 dry run using database/.env.
@@ -18,11 +21,12 @@ from psycopg2.extras import execute_values
 from sheet_client import fetch_sheet_rows
 
 # Column indices in the sheet (0-indexed, matches header row order).
+# Index 6 (MAL Rating) is intentionally skipped — that's MAL data, use
+# anime_mal.mean via anime_combined instead of a manually-copied duplicate.
 COL_ANIME_NAME = 2
 COL_SCORE = 3
 COL_FIRST_WATCHED_YEAR = 4
 COL_RELEASE_YEAR = 5
-COL_MAL_RATING = 6
 COL_CAUGHT_UP = 7
 COL_ACCESSIBILITY = 9
 COL_ANIME_URL = 12
@@ -35,7 +39,6 @@ INSERT_COLUMNS = [
     "score",
     "first_watched_year",
     "release_year",
-    "mal_rating",
     "caught_up",
     "accessibility",
     "notes",
@@ -69,7 +72,6 @@ def _transform_row(row: list[str]) -> dict[str, Any]:
         "score": _to_number(_cell(row, COL_SCORE)),
         "first_watched_year": _to_int(_cell(row, COL_FIRST_WATCHED_YEAR)),
         "release_year": _to_int(_cell(row, COL_RELEASE_YEAR)),
-        "mal_rating": _to_number(_cell(row, COL_MAL_RATING)),
         "caught_up": (_cell(row, COL_CAUGHT_UP) or "").upper() == "TRUE",
         "accessibility": _to_int(_cell(row, COL_ACCESSIBILITY)),
         "notes": _cell(row, COL_NOTES),
@@ -77,29 +79,41 @@ def _transform_row(row: list[str]) -> dict[str, Any]:
     }
 
 
-def run_sync(google_api_key: str, sheet_key: str, sheet_tab_name: str, supabase_db_url: str) -> int:
-    """Fetch the sheet and fully repopulate the Supabase `anime_sheet` table.
+def fetch_rows(google_api_key: str, sheet_key: str, sheet_tab_name: str) -> list[dict[str, Any]]:
+    """Fetch + transform only — no DB connection touched."""
+    raw_rows = fetch_sheet_rows(google_api_key, sheet_key, sheet_tab_name)
+    raw_rows = [row for row in raw_rows if _cell(row, COL_ANIME_NAME)]
+    return [_transform_row(row) for row in raw_rows]
 
-    TRUNCATE + bulk INSERT happen inside one transaction, so a crash mid-run
-    rolls back and leaves the previous table contents intact.
+
+def write_rows(cur, rows: list[dict[str, Any]]) -> None:
+    """TRUNCATE + bulk INSERT using the given cursor. Caller owns the
+    connection/transaction/commit — this never commits on its own, so it can
+    be composed into a larger shared transaction.
+    """
+    values = [tuple(row[col] for col in INSERT_COLUMNS) for row in rows]
+    cur.execute("TRUNCATE anime_sheet")
+    execute_values(
+        cur,
+        f"INSERT INTO anime_sheet ({', '.join(INSERT_COLUMNS)}) VALUES %s",
+        values,
+    )
+
+
+def run_sync(google_api_key: str, sheet_key: str, sheet_tab_name: str, supabase_db_url: str) -> int:
+    """Standalone convenience wrapper: fetch + write + commit with its own
+    connection. TRUNCATE + INSERT happen inside one transaction, so a crash
+    mid-run rolls back rather than leaving the table half-populated.
 
     Returns the number of rows written.
     """
-    raw_rows = fetch_sheet_rows(google_api_key, sheet_key, sheet_tab_name)
-    raw_rows = [row for row in raw_rows if _cell(row, COL_ANIME_NAME)]
-    rows = [_transform_row(row) for row in raw_rows]
-    values = [tuple(row[col] for col in INSERT_COLUMNS) for row in rows]
+    rows = fetch_rows(google_api_key, sheet_key, sheet_tab_name)
 
     conn = psycopg2.connect(supabase_db_url)
     try:
         with conn:
             with conn.cursor() as cur:
-                cur.execute("TRUNCATE anime_sheet")
-                execute_values(
-                    cur,
-                    f"INSERT INTO anime_sheet ({', '.join(INSERT_COLUMNS)}) VALUES %s",
-                    values,
-                )
+                write_rows(cur, rows)
     finally:
         conn.close()
 

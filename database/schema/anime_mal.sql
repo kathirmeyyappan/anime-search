@@ -4,7 +4,9 @@
 -- Source: GET /v2/users/{username}/animelist -> { node: {...}, list_status: {...} }.
 -- Each column comment below tags which of those two it comes from.
 
-DROP TABLE IF EXISTS anime_mal;
+-- CASCADE also drops anime_combined (it depends on this table) — re-run
+-- anime_combined.sql after this.
+DROP TABLE IF EXISTS anime_mal CASCADE;
 
 CREATE TABLE anime_mal (
     -- node.id
