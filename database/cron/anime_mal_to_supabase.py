@@ -26,6 +26,7 @@ INSERT_COLUMNS = [
     "mal_id",
     "title",
     "alternative_titles",
+    "image_url",
     "start_date",
     "end_date",
     "synopsis",
@@ -76,11 +77,14 @@ def _transform_entry(entry: dict[str, Any]) -> dict[str, Any]:
     list_status = entry.get("list_status", {})
 
     genres = [g["name"] for g in node.get("genres", []) if "name" in g]
+    main_picture = node.get("main_picture") or {}
+    image_url = main_picture.get("large") or main_picture.get("medium")
 
     return {
         "mal_id": node["id"],
         "title": node.get("title"),
         "alternative_titles": Json(node["alternative_titles"]) if node.get("alternative_titles") is not None else None,
+        "image_url": image_url,
         "start_date": _normalize_partial_date(node.get("start_date")),
         "end_date": _normalize_partial_date(node.get("end_date")),
         "synopsis": node.get("synopsis"),

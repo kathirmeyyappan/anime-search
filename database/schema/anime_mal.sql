@@ -22,6 +22,9 @@ CREATE TABLE anime_mal (
     -- Kept as-is (raw JSON): { "synonyms": [...], "en": "...", "ja": "..." }
     alternative_titles      JSONB,
 
+    -- node.main_picture.large (falls back to .medium if large is absent)
+    image_url               TEXT,
+
     -- node.start_date
     -- MAL dates are sometimes partial (e.g. just "2025" or "2025-12" for
     -- anime whose exact air date isn't pinned down yet). To keep this a real
@@ -126,6 +129,8 @@ COMMENT ON COLUMN anime_mal.title IS
     'node.title — canonical MAL title (usually the Japanese romaji title).';
 COMMENT ON COLUMN anime_mal.alternative_titles IS
     'node.alternative_titles — raw JSON {synonyms, en, ja}.';
+COMMENT ON COLUMN anime_mal.image_url IS
+    'node.main_picture.large, falls back to .medium if absent.';
 COMMENT ON COLUMN anime_mal.start_date IS
     'node.start_date — normalized to a full DATE; MAL''s partial dates (year-only or year-month) are rounded down to the 1st of the known period.';
 COMMENT ON COLUMN anime_mal.end_date IS
