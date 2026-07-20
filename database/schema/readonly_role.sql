@@ -14,7 +14,7 @@
 DO $$
 BEGIN
     IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'search_readonly') THEN
-        CREATE ROLE search_readonly WITH LOGIN PASSWORD 'CHANGE_ME_PASSWORD';
+        CREATE ROLE search_readonly WITH LOGIN PASSWORD 'agent-only-reads';
     END IF;
 END
 $$;
