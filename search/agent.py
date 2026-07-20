@@ -15,11 +15,14 @@ Deploy: modal deploy search/agent.py
 """
 
 import json
+from pathlib import Path
 
 import modal
 from pydantic import BaseModel
 
 from model import Model, app
+
+SEARCH_DIR = Path(__file__).parent
 
 agent_image = modal.Image.debian_slim().pip_install("fastapi[standard]")
 
@@ -28,7 +31,7 @@ class QueryRequest(BaseModel):
     query: str
 
 sandbox_image = modal.Image.debian_slim().pip_install("psycopg2-binary").add_local_file(
-    "sandbox_runner.py", "/root/sandbox_runner.py"
+    str(SEARCH_DIR / "sandbox_runner.py"), "/root/sandbox_runner.py"
 )
 
 SYSTEM_PROMPT = """You are a helpful assistant that answers natural language questions about \
@@ -150,3 +153,11 @@ def query_endpoint(item: QueryRequest) -> dict:
 def main(query: str = "What's the highest-rated anime I've completed?"):
     result = answer_query.remote(query)
     print(json.dumps(result, indent=2))
+
+
+@app.local_entrypoint()
+def test_sandbox(sql: str = "SELECT mal_id, title FROM anime_mal LIMIT 3"):
+    """Tests just the Sandbox + read-only DB path — no GPU, no model, fast.
+    Isolates DB/permission/secret issues from GPU cold-start issues.
+    """
+    print(json.dumps(_run_sql_in_sandbox(sql), indent=2))
