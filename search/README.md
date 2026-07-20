@@ -4,16 +4,17 @@ Natural-language query agent, fully self-hosted on Modal — no external LLM API
 
 Files
 - `model.py` — Qwen2.5-7B-Instruct served via vLLM on an A10G GPU, `@app.cls` kept warm across calls
-- `sandbox_runner.py` — runs inside a Modal Sandbox only, executes one validated read-only SQL query
-- `agent.py` — orchestrator + HTTP endpoint. Bounded loop (up to `MAX_TOOL_CALLS`): model gets the query + tool contract, and on each turn either answers (optionally with a `data` subset alongside the summary) or calls `run_sql` (executed in a Sandbox, isolated, read-only DB role); the result feeds back in and it can decide to query again based on what it learned, or answer
+- `sandbox_runner.py` — runs inside a Modal Sandbox only, executes one validated SQL query. No separate read-only DB role (Supabase's pooler doesn't play nice with custom roles — not worth the fight); defense in depth is just the read-only session + SELECT-only check, both enforced here.
+- `agent.py` — orchestrator + HTTP endpoint. Bounded loop (up to `MAX_TOOL_CALLS`): model gets the query + tool contract, and on each turn either answers (optionally with a `data` subset alongside the summary) or calls `run_sql` (executed in a Sandbox); the result feeds back in and it can decide to query again based on what it learned, or answer
 
 v1 is intentionally minimal: no retry-on-error self-correction, no TODO.txt context injection yet. Extend from here once the basic wiring is proven out.
 
 Setup
-1. `psql "$SUPABASE_DB_URL" -f database/schema/readonly_role.sql` (creates `search_readonly`, placeholder password)
-2. `psql "$SUPABASE_DB_URL" -c "ALTER ROLE search_readonly WITH PASSWORD '...';"` — set the real password directly, never in a file
-3. Build `READONLY_SUPABASE_DB_URL` (same host/port/dbname as `SUPABASE_DB_URL`, user `search_readonly`, percent-encode any special characters in the password)
-4. `modal secret create search-secrets READONLY_SUPABASE_DB_URL="$READONLY_SUPABASE_DB_URL"`
+Own dedicated secret (same DB credential as the sync pipeline's, deployed independently so this feature's containers don't also get MAL/Sheets creds they don't need):
+```bash
+set -a; source search/.env; set +a
+modal secret create search-secrets SUPABASE_DB_URL="$SUPABASE_DB_URL" --force
+```
 
 Invoking
 - `modal run search/agent.py --query "..."` — runs once now, prints the JSON result. For testing.

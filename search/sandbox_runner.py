@@ -1,13 +1,14 @@
 """Runs inside a Modal Sandbox only — never invoked directly. Executes one
-validated, read-only SQL query and prints the result as JSON to stdout. This
-is the actual isolation boundary between SQL an LLM decided to run and the
-rest of the system: its own container, its own read-only DB role, nothing
-else available to it.
+validated SQL query and prints the result as JSON to stdout. This is the
+isolation boundary between SQL an LLM decided to run and the rest of the
+system: its own container, nothing else available to it.
 
-Defense in depth, three separate layers: (1) search_readonly Postgres role
-can only SELECT, nothing else, (2) the session itself is set read-only,
-(3) this script rejects anything that isn't a plain SELECT before even
-trying to run it.
+Defense in depth, two layers: (1) the session itself is set read-only, so
+Postgres rejects any write regardless of what gets past the check below,
+(2) this script rejects anything that isn't a single plain SELECT statement
+before even trying to run it. (No separate read-only DB role — Supabase's
+pooler doesn't play nice with custom roles, not worth the fight for what
+these two layers already cover.)
 """
 
 import json
@@ -38,7 +39,7 @@ def main() -> None:
 
     conn = None
     try:
-        conn = psycopg2.connect(os.environ["READONLY_SUPABASE_DB_URL"])
+        conn = psycopg2.connect(os.environ["SUPABASE_DB_URL"])
         conn.set_session(readonly=True)
         with conn, conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             cur.execute(sql)

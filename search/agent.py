@@ -3,10 +3,10 @@
 Bounded tool-use loop (up to MAX_TOOL_CALLS run_sql calls):
   1. Model sees the query + tool contract, responds with strict JSON: either
      a run_sql tool call or a final answer.
-  2. Each tool call runs inside a Modal Sandbox (isolated, read-only DB role
-     — see sandbox_runner.py); the result gets appended to the conversation
-     and the model gets another turn — it can run another query based on
-     what it just learned, or answer.
+  2. Each tool call runs inside a Modal Sandbox (isolated container, read-only
+     session + SELECT-only validation — see sandbox_runner.py); the result
+     gets appended to the conversation and the model gets another turn — it
+     can run another query based on what it just learned, or answer.
   3. If the cap is hit without an answer, one last turn forces a best-effort
      final answer from whatever's been learned so far.
 
