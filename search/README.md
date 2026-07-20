@@ -5,9 +5,9 @@ Natural-language query agent, fully self-hosted on Modal — no external LLM API
 Files
 - `model.py` — Qwen2.5-7B-Instruct served via vLLM on an A10G GPU, `@app.cls` kept warm across calls
 - `sandbox_runner.py` — runs inside a Modal Sandbox only, executes one validated read-only SQL query
-- `agent.py` — orchestrator + HTTP endpoint. Fixed two-step flow: model gets the query + tool contract → either answers directly or calls `run_sql` (executed in a Sandbox, isolated, read-only DB role) → gets one more turn with the result to answer
+- `agent.py` — orchestrator + HTTP endpoint. Bounded loop (up to `MAX_TOOL_CALLS`): model gets the query + tool contract, and on each turn either answers (optionally with a `data` subset alongside the summary) or calls `run_sql` (executed in a Sandbox, isolated, read-only DB role); the result feeds back in and it can decide to query again based on what it learned, or answer
 
-v1 is intentionally minimal: no retry/self-correction loop, no TODO.txt context injection, single tool call max. Extend from here once the basic wiring is proven out.
+v1 is intentionally minimal: no retry-on-error self-correction, no TODO.txt context injection yet. Extend from here once the basic wiring is proven out.
 
 Setup
 1. `psql "$SUPABASE_DB_URL" -f database/schema/readonly_role.sql` (creates `search_readonly`, placeholder password)
